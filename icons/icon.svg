@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#0c0d11"/>
+  <g stroke="#252838" stroke-width="2" opacity="0.6"><path d="M128 0v512M256 0v512M384 0v512M0 128h512M0 256h512M0 384h512"/></g>
+  <rect x="76" y="176" width="160" height="160" fill="#13151e" stroke="#f06292" stroke-width="6"/>
+  <rect x="276" y="176" width="160" height="160" fill="#13151e" stroke="#3ecf8e" stroke-width="6"/>
+  <text x="156" y="282" font-family="DM Mono, Consolas, monospace" font-size="84" font-weight="500" fill="#dde1ec" text-anchor="middle">p→q</text>
+  <text x="356" y="282" font-family="DM Mono, Consolas, monospace" font-size="84" font-weight="500" fill="#dde1ec" text-anchor="middle">¬q</text>
+  <text x="256" y="420" font-family="DM Mono, Consolas, monospace" font-size="72" fill="#f5a623" text-anchor="middle">⊥</text>
+</svg>
