@@ -205,6 +205,14 @@ async function boot() {
       });
       if (ev.chain >= 5 && ev.chain % 5 === 0) fx.floatText(mx, my + 48, `${ev.chain} CHAIN  ×${ev.mult.toFixed(1)}`, { color: PALETTE.white, size: 16, dy: -30, life: 1.3 });
     }
+    if (ev.varsCleared.length > 0 && ci && cj) {
+      const target = ui.scoreCenter();
+      ev.varsCleared.forEach((v, k) => fx.floatText(mx, my - 70 - k * 26, `NO MORE ${v}  +${ev.varPoints / ev.varsCleared.length}`, { color: PALETTE.purple, size: 20, dy: -50, life: 1.6 }));
+      fx.ring(mx, my, PALETTE.purple, 90);
+      fx.burst(mx, my, { color: PALETTE.purple, count: 30, power: 1.2, size: 3.5 });
+      fx.flyText(mx, my - 40, target.x, target.y, `+${ev.varPoints}`, { color: PALETTE.purple, size: 18, dur: 0.6, delay: 0.3 });
+      sound.digitClear(ev.varsCleared.length);
+    }
     ui.markRemoving(ev.i, ev.j);
     sound.remove(ev.chain, ev.heat); vibrate(12 + Math.round(ev.heat * 20));
     fx.shake(ui.boardWrap, CONFIG.fx.shakeBase * (0.5 + ev.heat * 1.5 + speedBoost + feverBoost), 160);
@@ -533,6 +541,7 @@ async function boot() {
         <br>
         <b>REFUTE</b>: <span class="ex">2 つ合わせると矛盾する</span>(どんな真偽の割り当てでも同時には成り立たない)Pair が消える。例: <span class="f">p</span> と <span class="f">¬p</span>、<span class="f">p→q</span> と <span class="f">p∧¬q</span>、<span class="f">p∨q</span> と <span class="f">¬p∧¬q</span>。行がまるごと空になると行が消える。Board を空にすれば Clear。<br>
         Score: 1 Pair の得点 = ${c.score.pairBase} 点 × 難しさ倍率 × Chain 倍率 × Speed 倍率。難しさ倍率は、横の隣どうし ×1.0、縦 ×${c.difficulty.vertical}、斜め ×${c.difficulty.diagonal}、2 つの間の空マス 1 つごとに +${c.difficulty.gapPerCell}(斜めは +${c.difficulty.diagonalGapPerCell})、2 式の結合子 1 つごとに +${c.difficulty.perConnective}(複雑な式ほど高い)。Chain は消すたびに倍率 +${c.chain.step}(最大 ×${c.chain.max})、${c.chain.decayGraceMs / 1000} 秒消さないと ${c.chain.decayStepMs / 1000} 秒ごとに 1 段階減る。×${c.chain.max} で ${c.fever.durationMs / 1000} 秒の FEVER(Score ×${c.fever.pointMult})。<br>
+        VAR CLEAR: ある変数(p など)を含む式を Board から全部消し切ると、1 つの変数ごとに +${c.score.varClear} × Chain 倍率。<br>
         SHUFFLE: 残りのタイルを並べ替える(Number Match の Add に相当)。Dead End(消せる Pair が無い)になってから使えば Chain は半分残る。尽きると GIVE UP ボタンになる(Heart −1、Stage 得点の半分は獲得できる)。<br>
         Hint(使用上限 Stage ごとに ${c.hint.perStage} 回、Chain 倍率で中身が変わる): HINT(×1〜)は Pair を 1 組示し、その Pair は得点半分で Chain は維持。FLASH(×${c.hint.flashFrom} 以上)は全 Pair を ${c.hint.flashMs / 1000} 秒光らせ、ゲージが半分になる。SCOPE(×${c.hint.scopeFrom} 以上と FEVER 中)は相手のいるタイルを 1 枚光らせ、残り Pair 数を示す。光ったタイルを含む Pair を消せば全て獲得(Chain 維持、Speed なし)。相手を外すと 1 回目 Chain −${c.hint.scopeMissChain}、2 回目で半分。光ったタイルを使わず別の Pair を消しても半分。Dead End なのに押すと使用回数 1 と Chain 半分、−${c.score.hintWhenStuck} 点。SHUFFLE も無いのに押すと Heart −1 で Stage 得点を全部失い、さらに −${c.score.blindHintPenalty} 点。残した Hint は Clear 時 1 回ごと +${c.score.hintSaved}。<br>
         <br>
