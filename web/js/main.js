@@ -6,7 +6,7 @@ import { Progress, RefuteGame, DeriveGame } from './game.js';
 import { Renderer } from './render.js';
 import { FX, heatColor, PALETTE } from './fx.js';
 import { Sound, vibrate } from './audio.js';
-import { pretty } from './logic.js';
+import { pretty, refutePairs } from './logic.js';
 
 const fmt = (n) => n.toLocaleString('en-US');
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -44,7 +44,8 @@ async function boot() {
     if (mode === 'refute') {
       const st = refute.stage; if (!st) return;
       ui.fitCells(refute.width);
-      ui.renderBoard(st.board, { selected: st.selected, hintPair: st.hintPair, ...opts });
+      const flashPairs = st.flashUntil !== null && Date.now() < st.flashUntil ? refutePairs(st.board, refute.width) : null;
+      ui.renderBoard(st.board, { selected: st.selected, hintPair: st.hintPair, flashPairs, scopeTile: st.scope?.tile ?? null, ...opts });
       ui.hudRefute(refute);
     } else if (mode === 'derive') {
       const c = derive.cur; if (!c) return;
@@ -88,10 +89,36 @@ async function boot() {
         }
         case 'feverEnd': sound.feverEnd(); ui.toast(`FEVER 終了 … Chain ×${ev.mult.toFixed(1)}`, 2000); ui.hudRefute(refute); break;
         case 'chainDecay': sound.chainDecay(); ui.hudRefute(refute); if (ev.chain === 0) ui.toast('Chain が途切れた … ×1.0', 1500); break;
+        case 'noHints': ui.toast('Hint の使用上限に達した'); sound.invalid(); break;
         case 'noHint': {
           lineStreak = 0; redraw();
-          ui.toast(ev.blind ? `Pair はもう無く、SHUFFLE も無かった… −${fmt(ev.penalty)}` : `Pair はもう無い… −${ev.penalty}　SHUFFLE で並べ替えよう`, 2800);
+          ui.toast(ev.blind ? `Pair はもう無く、SHUFFLE も無かった… −${fmt(ev.penalty)}` : `Pair はもう無い… −${ev.penalty}、Chain ×${ev.mult.toFixed(1)}　SHUFFLE で並べ替えよう`, 2800);
           fx.flash('rgba(239,68,68,0.15)'); sound.stuck(); vibrate([30, 30, 30]);
+          break;
+        }
+        case 'flash': {
+          sound.flash();
+          redraw({ flashPairs: ev.pairs });
+          for (const [a, b] of ev.pairs) { const ca = ui.cellCenter(a), cb = ui.cellCenter(b); if (ca && cb) fx.flashLine(ca.x, ca.y, cb.x, cb.y, PALETTE.amber, 2); }
+          ui.toast(`FLASH: 消せる Pair ${ev.pairs.length} 組`, CONFIG.refute.hint.flashMs);
+          break;
+        }
+        case 'flashEnd': redraw(); break;
+        case 'scope': {
+          sound.scope(); redraw();
+          const c = ui.cellCenter(ev.tile);
+          if (c) { fx.ring(c.x, c.y, PALETTE.red, 70); fx.burst(c.x, c.y, { color: PALETTE.red, count: 16, power: 0.6 }); }
+          ui.toast(`SCOPE: ${pretty(refute.stage.board[ev.tile])} と矛盾する相手を探せ(残り Pair ${ev.remaining})`, 2800);
+          break;
+        }
+        case 'scopeMiss': {
+          sound.scopeMiss(); vibrate([40, 30, 40]); fx.flash('rgba(239,68,68,0.2)'); ui.hudRefute(refute);
+          ui.toast(ev.misses === 1 ? `外した… Chain −${CONFIG.refute.hint.scopeMissChain} (×${ev.mult.toFixed(1)})` : `2 回目… Chain 半分 (×${ev.mult.toFixed(1)})、SCOPE 終了`, 2200);
+          break;
+        }
+        case 'scopeEnd': {
+          if (ev.reason === 'ignored') ui.toast(`光ったタイルを使わなかった… Chain 半分 (×${ev.mult.toFixed(1)})`, 2400);
+          redraw();
           break;
         }
         case 'shuffle': {
@@ -103,8 +130,8 @@ async function boot() {
           break;
         }
         case 'hint': {
-          lineStreak = 0; sound.hint(); redraw();
-          if (ev.brokeChain) ui.toast('Hint: Chain が途切れた ×1.0');
+          sound.hint(); redraw();
+          ui.toast('HINT: この Pair は得点半分、Chain は維持', 2000);
           const c = ui.cellCenter(ev.pair[0]); if (c) fx.ring(c.x, c.y, PALETTE.amber, 50);
           break;
         }
@@ -137,9 +164,10 @@ async function boot() {
       // 矛盾の中身を一瞬見せる: 「p→q ⊥ p∧¬q」
       fx.floatText(mx, my + 26, `${pretty(ev.a)}  ⊥  ${pretty(ev.b)}`, { color: PALETTE.white, size: 13, dy: -25, life: 1.0 });
       const labels = [...ev.labels];
+      if (ev.diffMult > 1) labels.unshift(`×${ev.diffMult.toFixed(2).replace(/0$/, '')}`);
       if (ev.speed === 'fast') labels.push('FAST!!'); else if (ev.speed === 'quick') labels.push('QUICK');
       labels.forEach((text, k) => {
-        const lc = text === 'FAST!!' ? PALETTE.rose : text === 'QUICK' ? PALETTE.amber : text === 'COMPLEX' ? PALETTE.purple : PALETTE.green;
+        const lc = text === 'FAST!!' ? PALETTE.rose : text === 'QUICK' ? PALETTE.amber : text === 'COMPLEX' || text === 'LONG SHOT' || text === 'DIAGONAL SNIPE' ? PALETTE.purple : text === 'SCOPE' || text === 'HINTED' ? PALETTE.red : text.startsWith('×') ? PALETTE.white : PALETTE.green;
         fx.floatText(mx, my - 36 - k * 22, text, { color: lc, size: 15, dy: -45, life: 1.1 });
       });
       if (ev.chain >= 5 && ev.chain % 5 === 0) fx.floatText(mx, my + 48, `${ev.chain} CHAIN  ×${ev.mult.toFixed(1)}`, { color: PALETTE.white, size: 16, dy: -30, life: 1.3 });
@@ -198,6 +226,7 @@ async function boot() {
         <div class="row"><span class="k">Clear Bonus</span><span class="v plus">+${fmt(ev.clearBonus)}</span></div>
         ${ev.perfect ? `<div class="row"><span class="k">Perfect Bonus</span><span class="v plus">+${fmt(ev.perfectBonus)}</span></div>` : ''}
         ${ev.savedBonus ? `<div class="row"><span class="k">SHUFFLE 温存 Bonus(${ev.shufflesLeft} 回)</span><span class="v plus">+${fmt(ev.savedBonus)}</span></div>` : ''}
+        ${ev.hintBonus ? `<div class="row"><span class="k">Hint 温存 Bonus(${ev.hintsLeft} 回)</span><span class="v plus">+${fmt(ev.hintBonus)}</span></div>` : ''}
         ${ev.lifeGain ? `<div class="row"><span class="k">Heart 回復</span><span class="v plus">+${ev.lifeGain} ♥</span></div>` : ''}
         <div class="row total"><span class="k">Total Score</span><span class="v">${fmt(ev.score)}</span></div>
       </div>
@@ -466,8 +495,9 @@ async function boot() {
         <b>位置</b>(両モード共通): 2 つのタイルは、同じ行・列・斜めの一直線上にあり、間がすべて空マスのときだけ選べる。行の右端と次の行の左端はつながらない。<br>
         <br>
         <b>REFUTE</b>: <span class="ex">2 つ合わせると矛盾する</span>(どんな真偽の割り当てでも同時には成り立たない)Pair が消える。例: <span class="f">p</span> と <span class="f">¬p</span>、<span class="f">p→q</span> と <span class="f">p∧¬q</span>、<span class="f">p∨q</span> と <span class="f">¬p∧¬q</span>。行がまるごと空になると行が消える。Board を空にすれば Clear。<br>
-        Score: 1 Pair ${c.score.pairBase} 点 + 間の空マス 1 つごと +${c.score.gapPerCell}、斜め +${c.score.diagonal}、式の結合子 1 つごと +${c.score.complexity}(複雑な式ほど加点)。Chain は消すたびに倍率 +${c.chain.step}(最大 ×${c.chain.max})、${c.chain.decayGraceMs / 1000} 秒消さないと減り始める。×${c.chain.max} で FEVER。<br>
-        SHUFFLE: 残りのタイルを並べ替える(Number Match の Add に相当)。Dead End(消せる Pair が無い)になってから使えば Chain は半分残る。尽きると GIVE UP ボタンになる。Hint は Chain が途切れ、Pair が無いのに押すと減点。<br>
+        Score: 1 Pair の得点 = ${c.score.pairBase} 点 × 難しさ倍率 × Chain 倍率 × Speed 倍率。難しさ倍率は、横の隣どうし ×1.0、縦 ×${c.difficulty.vertical}、斜め ×${c.difficulty.diagonal}、2 つの間の空マス 1 つごとに +${c.difficulty.gapPerCell}(斜めは +${c.difficulty.diagonalGapPerCell})、2 式の結合子 1 つごとに +${c.difficulty.perConnective}(複雑な式ほど高い)。Chain は消すたびに倍率 +${c.chain.step}(最大 ×${c.chain.max})、${c.chain.decayGraceMs / 1000} 秒消さないと ${c.chain.decayStepMs / 1000} 秒ごとに 1 段階減る。×${c.chain.max} で ${c.fever.durationMs / 1000} 秒の FEVER(Score ×${c.fever.pointMult})。<br>
+        SHUFFLE: 残りのタイルを並べ替える(Number Match の Add に相当)。Dead End(消せる Pair が無い)になってから使えば Chain は半分残る。尽きると GIVE UP ボタンになる(Heart −1、Stage 得点の半分は獲得できる)。<br>
+        Hint(使用上限 Stage ごとに ${c.hint.perStage} 回、Chain 倍率で中身が変わる): HINT(×1〜)は Pair を 1 組示し、その Pair は得点半分で Chain は維持。FLASH(×${c.hint.flashFrom} 以上)は全 Pair を ${c.hint.flashMs / 1000} 秒光らせ、ゲージが半分になる。SCOPE(×${c.hint.scopeFrom} 以上と FEVER 中)は相手のいるタイルを 1 枚光らせ、残り Pair 数を示す。光ったタイルを含む Pair を消せば全て獲得(Chain 維持、Speed なし)。相手を外すと 1 回目 Chain −${c.hint.scopeMissChain}、2 回目で半分。光ったタイルを使わず別の Pair を消しても半分。Dead End なのに押すと使用回数 1 と Chain 半分、−${c.score.hintWhenStuck} 点。SHUFFLE も無いのに押すと Heart −1 で Stage 得点を全部失い、さらに −${c.score.blindHintPenalty} 点。残した Hint は Clear 時 1 回ごと +${c.score.hintSaved}。<br>
         <br>
         <b>DERIVE</b>: 2 つのタイルを選ぶと、当てはまる推論規則で結論のタイルに合体する(結論は 2 つ目の位置)。Goal の式を作れば Clear。手数が par 以内で ★★★、par+2 以内で ★★。
         <table>
