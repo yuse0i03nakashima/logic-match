@@ -203,6 +203,38 @@ export function refutePairs(cells, width) {
   return out;
 }
 
+/** 1 手を適用した結果の Board(deriveMoves が返す手に対して)。 */
+export function applyMove(cells, move) {
+  if (move.rule === 'ANDE') return andE(cells, move.i);
+  const out = cells.slice();
+  out[move.j] = move.result;
+  out[move.i] = '';
+  return out;
+}
+
+/**
+ * いまの Board から Goal に届く手順があるか(幅優先探索、maxDepth 手まで)。
+ * 行き止まりに入ったことをプレイヤーに知らせるために使う。
+ */
+export function goalReachable(cells, width, goal, maxDepth = 8) {
+  if (cells.includes(goal)) return true;
+  const seen = new Set([cells.join('|')]);
+  let frontier = [cells];
+  for (let depth = 0; depth < maxDepth && frontier.length; depth++) {
+    const next = [];
+    for (const c of frontier) {
+      for (const m of deriveMoves(c, width, goal)) {
+        const n = applyMove(c, m);
+        if (n.includes(goal)) return true;
+        const key = n.join('|');
+        if (!seen.has(key)) { seen.add(key); next.push(n); }
+      }
+    }
+    frontier = next;
+  }
+  return false;
+}
+
 /** DERIVE: いま使える手の一覧 [{rule, i, j, result}]。 */
 export function deriveMoves(cells, width, goal) {
   const out = [];

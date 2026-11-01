@@ -323,7 +323,11 @@ async function boot() {
           break;
         }
         case 'move': await onMove(ev); break;
-        case 'deadEnd': ui.toast('使える手が無い … UNDO か RESET', 2600); sound.stuck(); break;
+        case 'deadEnd': {
+          ui.toast(ev.reason === 'noMoves' ? '使える手が無い … UNDO か RESET' : 'この先 Goal に届かない … UNDO で戻ろう', 2800);
+          sound.stuck(); vibrate([30, 30, 30]);
+          break;
+        }
         case 'undo': sound.deselect(); redraw(); ui.toast(`UNDO (${ev.moves} 手は数えたまま)`, 1200); break;
         case 'reset': sound.add(); redraw(); break;
         case 'noUndo': ui.toast('戻せる手が無い'); sound.invalid(); break;
@@ -508,7 +512,7 @@ async function boot() {
           <tr><td>∧E</td><td><span class="f">A∧B</span> を 2 回タップ ⊢ <span class="f">A</span> と <span class="f">B</span>(B は最初の空マスへ)</td></tr>
           <tr><td>⊥</td><td><span class="f">A</span>, <span class="f">¬A</span> ⊢ <span class="f">⊥</span>(Goal が ⊥ のときだけ)</td></tr>
         </table>
-        UNDO は何手でも戻せるが、手数は数えたまま。RESET で最初の Board に戻る。
+        UNDO は何手でも戻せるが、手数は数えたまま。RESET で最初の Board に戻る。Stage 1〜10 の Board は、どの順で進めても Goal に届くように作ってある。Stage 11 以降は行き止まりがあり、入ったときは知らせる。
       </div>
       <div class="actions"><button class="btn btn-primary" id="ov-back">Back</button></div>`);
     card.querySelector('#ov-back').onclick = showTitle;
