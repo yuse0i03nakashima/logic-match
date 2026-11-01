@@ -4,6 +4,8 @@
 //   main.js   … 画面・演出・音とのつなぎ
 //
 // どちらのクラスも、操作は状態を更新して「起きたこと」のイベント配列を返す。
+// RefuteGame は THE TEN(NumberMatch)の Game と同じ骨格。Add が SHUFFLE に、matches が unsat2 に、
+// 位置の条件が 8 方向の見通し線になっている。Chain・FEVER・3 段階の Hint・Heart・GIVE UP は同じ。
 
 import { refutePairs, unsat2, connected, collapseRows, applyRule, andE, deriveMoves, parse } from './logic.js';
 
@@ -34,18 +36,37 @@ export class Progress {
 
 const RANKS = ['C', 'B', 'A', 'S'];
 
-// 式の複雑さ(結合子の数)。難しい式を消すほど加点
-const complexity = (s) => [...s].filter((c) => '!&|>'.includes(c)).length;
+// 式の複雑さ(結合子の数)。難しい式を消すほど倍率が上がる
+const connectives = (s) => [...s].filter((c) => '!&|>'.includes(c)).length;
+
+/** 2 マスの位置関係と難しさ倍率。REFUTE は 8 方向の見通し線だけなので、横・縦・斜めと間の空マス。 */
+export function refuteDifficulty(diffCfg, width, i, j, a, b) {
+  const ri = Math.floor(i / width), ci = i % width, rj = Math.floor(j / width), cj = j % width;
+  const gap = Math.max(Math.abs(rj - ri), Math.abs(cj - ci)) - 1;
+  const kind = ri === rj ? (gap === 0 ? 'adjacent' : 'line') : ci === cj ? 'vertical' : 'diagonal';
+  let mult = 1;
+  const labels = [];
+  if (kind === 'vertical') { mult = diffCfg.vertical; labels.push('VERTICAL'); }
+  if (kind === 'diagonal') { mult = diffCfg.diagonal; labels.push(gap > 0 ? 'DIAGONAL SNIPE' : 'DIAGONAL'); }
+  if (gap > 0) {
+    mult += gap * (kind === 'diagonal' ? diffCfg.diagonalGapPerCell : diffCfg.gapPerCell);
+    if (kind !== 'diagonal') labels.unshift(gap >= 3 ? 'LONG SHOT' : 'OPENED');
+  }
+  const cx = connectives(a) + connectives(b);
+  mult += cx * diffCfg.perConnective;
+  if (cx >= diffCfg.complexFrom) labels.push('COMPLEX');
+  return { mult: Math.round(mult * 100) / 100, labels, kind, gap };
+}
 
 // ======================================================================
-// REFUTE: 矛盾する Pair を消して Board を空にする(Number Match の骨格)
+// REFUTE: 矛盾する Pair を消して Board を空にする
 // ======================================================================
 export class RefuteGame {
   constructor(stages, cfg, progress) {
     this.stages = stages;
     this.cfg = cfg;
     this.progress = progress;
-    this.p = progress.data.refute;      // この モードの保存領域
+    this.p = progress.data.refute;      // このモードの保存領域
   }
   get run() { return this.p.run; }
   get stage() { return this.run?.stage ?? null; }
@@ -58,6 +79,12 @@ export class RefuteGame {
   get heat() { return (this.multiplier - 1) / (this.cfg.chain.max - 1); }
   get isStuck() { return !!this.stage && refutePairs(this.stage.board, this.width).length === 0; }
   get inFever() { return !!this.stage?.fever; }
+  get hintTier() {
+    const h = this.cfg.hint, m = this.multiplier;
+    if (this.inFever || m >= h.scopeFrom) return 'scope';
+    if (m >= h.flashFrom) return 'flash';
+    return 'hint';
+  }
   feverRatio(now) {
     const f = this.stage?.fever;
     return f ? Math.max(0, Math.min(1, (f.until - now) / this.cfg.fever.durationMs)) : 0;
@@ -90,9 +117,10 @@ export class RefuteGame {
     const variant = def.boards[attempt % def.boards.length];
     this.run.stage = {
       board: variant.cells.slice(),
-      shufflesLeft: def.shuffles,
-      shufflesUsed: 0,
-      chain: 0, stageScore: 0, selected: null, hintPair: null,
+      shufflesLeft: def.shuffles, shufflesUsed: 0,
+      hintsLeft: this.cfg.hint.perStage, hintsUsed: 0,
+      chain: 0, stageScore: 0, selected: null,
+      hintPair: null, flashUntil: null, scope: null,
       lastRemoveAt: null, decayed: 0, fever: null, status: 'play',
     };
     this.save();
@@ -103,7 +131,7 @@ export class RefuteGame {
     if (!st || st.status !== 'play') return;
     if (st.fever) st.fever.until = now + this.cfg.fever.durationMs * 0.5;
     st.lastRemoveAt = st.chain > 0 ? now : null;
-    st.decayed = 0;
+    st.decayed = 0; st.flashUntil = null;
     this.save();
   }
 
@@ -111,6 +139,7 @@ export class RefuteGame {
     const st = this.stage, cfg = this.cfg;
     if (!st || st.status !== 'play') return [];
     const events = [];
+    if (st.flashUntil !== null && now >= st.flashUntil) { st.flashUntil = null; events.push({ type: 'flashEnd' }); }
     if (st.fever && now >= st.fever.until) {
       st.fever = null;
       st.chain = Math.floor(st.chain * cfg.fever.endChainRatio);
@@ -126,7 +155,10 @@ export class RefuteGame {
           st.chain = Math.max(0, st.chain - steps);
           st.decayed += steps;
           events.push({ type: 'chainDecay', chain: st.chain, mult: this.multiplier, heat: this.heat });
-          if (st.chain === 0) st.lastRemoveAt = null;
+          if (st.chain === 0) {
+            st.lastRemoveAt = null;
+            if (st.scope) { st.scope = null; events.push({ type: 'scopeEnd', reason: 'decay' }); }
+          }
         }
       }
     }
@@ -148,9 +180,25 @@ export class RefuteGame {
     const i = Math.min(st.selected, pos), j = Math.max(st.selected, pos);
     if (connected(b, this.width, i, j) && unsat2(b[i], b[j])) return this.remove(i, j, now);
     const prev = st.selected; st.selected = pos;
-    // なぜ消せないかを伝える(位置か、意味か)
     const reason = !connected(b, this.width, i, j) ? 'position' : 'satisfiable';
-    return [{ type: 'invalid', from: prev, to: pos, reason }, { type: 'select', pos }];
+    const events = [{ type: 'invalid', from: prev, to: pos, reason }, { type: 'select', pos }];
+    if (st.scope && (st.scope.tile === i || st.scope.tile === j)) events.push(...this.scopeMiss());
+    return events;
+  }
+
+  scopeMiss() {
+    const st = this.stage, h = this.cfg.hint;
+    st.scope.misses += 1;
+    const before = st.chain;
+    if (st.scope.misses === 1) {
+      st.chain = Math.max(0, st.chain - h.scopeMissChain);
+      this.save();
+      return [{ type: 'scopeMiss', misses: 1, from: before, chain: st.chain, mult: this.multiplier }];
+    }
+    st.chain = Math.floor(st.chain * h.scopeBreakRatio);
+    st.scope = null;
+    this.save();
+    return [{ type: 'scopeMiss', misses: 2, from: before, chain: st.chain, mult: this.multiplier }, { type: 'scopeEnd', reason: 'miss' }];
   }
 
   remove(i, j, now) {
@@ -161,36 +209,43 @@ export class RefuteGame {
       if (before.slice(r * w, (r + 1) * w).every((c) => c === '')) clearedRows.push(r);
     }
     const after = collapseRows(before, w);
+    const events = [];
 
-    // 道の種類と間の空マス
-    const ri = Math.floor(i / w), ci = i % w, rj = Math.floor(j / w), cj = j % w;
-    const gap = Math.max(Math.abs(rj - ri), Math.abs(cj - ci)) - 1;
-    const kind = ri === rj ? 'line' : ci === cj ? 'vertical' : 'diagonal';
-    let bonus = gap * cfg.score.gapPerCell;
-    const labels = [];
-    if (gap > 0) labels.push(gap >= 3 ? 'LONG SHOT' : 'OPENED');
-    if (kind === 'diagonal') { bonus += cfg.score.diagonal; labels.push('DIAGONAL'); }
-    if (kind === 'vertical') bonus += cfg.score.vertical;
-    const cx = complexity(b[i]) + complexity(b[j]);
-    if (cx >= 3) { bonus += cx * cfg.score.complexity; labels.push('COMPLEX'); } else bonus += cx * cfg.score.complexity;
+    const hinted = !!st.hintPair && st.hintPair[0] === i && st.hintPair[1] === j;
+    let scoped = false, scopeBroken = false;
+    if (st.scope) {
+      if (st.scope.tile === i || st.scope.tile === j) scoped = true;
+      else { scopeBroken = true; st.chain = Math.floor(st.chain * cfg.hint.scopeBreakRatio); }
+      st.scope = null;
+    }
+    st.hintPair = null;
 
+    const diff = refuteDifficulty(cfg.difficulty, w, i, j, b[i], b[j]);
     const elapsed = st.lastRemoveAt === null ? Infinity : now - st.lastRemoveAt;
-    const speed = elapsed < cfg.speed.fastMs ? { tier: 'fast', mult: cfg.speed.fastMult }
-      : elapsed < cfg.speed.quickMs ? { tier: 'quick', mult: cfg.speed.quickMult } : { tier: null, mult: 1 };
+    const speed = scoped ? { tier: null, mult: 1 }
+      : elapsed < cfg.speed.fastMs ? { tier: 'fast', mult: cfg.speed.fastMult }
+        : elapsed < cfg.speed.quickMs ? { tier: 'quick', mult: cfg.speed.quickMult } : { tier: null, mult: 1 };
     st.lastRemoveAt = now; st.decayed = 0;
-    st.chain += 1;
+    const assisted = hinted || scoped;
+    if (!assisted) st.chain += 1;
     const mult = this.multiplier;
     const feverMult = st.fever ? cfg.fever.pointMult : 1;
-    const pairPoints = Math.round((cfg.score.pairBase + bonus) * mult * speed.mult * feverMult);
+    const hintedRatio = hinted ? cfg.score.hintedPairRatio : 1;
+    const pairPoints = Math.round(cfg.score.pairBase * diff.mult * mult * speed.mult * feverMult * hintedRatio);
     const rowPoints = Math.round(cfg.score.rowClear * clearedRows.length ** 2 * mult * feverMult);
     const points = pairPoints + rowPoints;
     st.stageScore += points; this.run.score += points;
-    st.selected = null; st.hintPair = null; st.board = after;
+    st.selected = null; st.board = after;
 
-    const events = [{
+    const labels = [...diff.labels];
+    if (scoped) labels.push('SCOPE');
+    if (hinted) labels.push('HINTED');
+    events.push({
       type: 'remove', i, j, a: b[i], b: b[j], points, pairPoints, rowPoints, chain: st.chain, mult, heat: this.heat,
-      clearedRows, board: after, labels, speed: speed.tier, fever: !!st.fever,
-    }];
+      clearedRows, board: after, labels, diffMult: diff.mult, speed: speed.tier, speedMult: speed.mult, fever: !!st.fever,
+      hinted, scoped, scopeBroken,
+    });
+    if (scopeBroken) events.push({ type: 'scopeEnd', reason: 'ignored', chain: st.chain, mult: this.multiplier });
     if (!st.fever && mult >= cfg.chain.max) {
       st.fever = { until: now + cfg.fever.durationMs };
       events.push({ type: 'feverStart', durationMs: cfg.fever.durationMs });
@@ -214,36 +269,64 @@ export class RefuteGame {
     st.shufflesLeft -= 1; st.shufflesUsed += 1;
     const chainBefore = st.chain;
     st.chain = stuck ? Math.floor(st.chain * cfg.stuck.shuffleKeepRatio) : 0;
-    st.selected = null; st.hintPair = null;
+    st.selected = null; st.hintPair = null; st.scope = null; st.flashUntil = null;
     st.lastRemoveAt = st.chain > 0 ? now : null; st.decayed = 0;
     this.save();
     return [{ type: 'shuffle', board: st.board, stuckBefore: stuck, chainBefore, chainAfter: st.chain,
               multBefore: this.multiplierFor(chainBefore), multAfter: this.multiplier, shufflesLeft: st.shufflesLeft }];
   }
 
-  useHint() {
+  payHint() {
     const st = this.stage, cfg = this.cfg;
+    if (st.fever) { st.fever.until -= cfg.fever.hintTimeCostMs; st.hintsUsed += 1; return true; }
+    if (st.hintsLeft <= 0) return false;
+    st.hintsLeft -= 1; st.hintsUsed += 1;
+    return true;
+  }
+
+  useHint(now = Date.now()) {
+    const st = this.stage, cfg = this.cfg, h = cfg.hint;
     if (!st || st.status !== 'play') return [];
+    const tier = this.hintTier;
     const pairs = refutePairs(st.board, this.width);
-    const brokeChain = st.chain > 0;
-    st.chain = 0; st.selected = null; st.lastRemoveAt = null; st.decayed = 0;
+    st.selected = null;
     if (pairs.length === 0) {
       if (st.shufflesLeft <= 0) {
         const extra = Math.max(0, Math.min(this.run.score - st.stageScore, cfg.score.blindHintPenalty));
         this.run.score -= extra;
-        const events = [{ type: 'noHint', penalty: st.stageScore + extra, brokeChain, blind: true }];
+        const events = [{ type: 'noHint', penalty: st.stageScore + extra, blind: true, tier }];
         events.push(...this.stageFailed('blindHint', 0));
         this.save();
         return events;
       }
+      if (!this.payHint()) return [{ type: 'noHints', tier }];
+      const before = st.chain;
+      st.chain = Math.floor(st.chain * h.stuckKeepRatio);
+      st.scope = null; st.hintPair = null;
       const penalty = Math.min(st.stageScore, cfg.score.hintWhenStuck);
       st.stageScore -= penalty; this.run.score -= penalty;
       this.save();
-      return [{ type: 'noHint', penalty, brokeChain, blind: false, shufflesLeft: st.shufflesLeft }];
+      return [{ type: 'noHint', penalty, blind: false, tier, from: before, chain: st.chain, mult: this.multiplier, shufflesLeft: st.shufflesLeft, hintsLeft: st.hintsLeft }];
     }
-    st.hintPair = pairs[Math.floor(Math.random() * pairs.length)];
+    if (!this.payHint()) return [{ type: 'noHints', tier }];
+    if (tier === 'hint') {
+      st.hintPair = pairs[Math.floor(Math.random() * pairs.length)];
+      this.save();
+      return [{ type: 'hint', tier, pair: st.hintPair, hintsLeft: st.hintsLeft }];
+    }
+    if (tier === 'flash') {
+      st.flashUntil = now + h.flashMs;
+      if (st.chain > 0) { st.lastRemoveAt = now - cfg.chain.decayGraceMs * (1 - h.flashGaugeRatio); st.decayed = 0; }
+      this.save();
+      return [{ type: 'flash', tier, pairs, until: st.flashUntil, hintsLeft: st.hintsLeft }];
+    }
+    const count = new Map();
+    for (const [a, c] of pairs) { count.set(a, (count.get(a) ?? 0) + 1); count.set(c, (count.get(c) ?? 0) + 1); }
+    const tiles = [...count.entries()].sort((x, y) => x[1] - y[1]);
+    const tile = tiles[Math.floor(Math.random() * Math.min(3, tiles.length))][0];
+    st.scope = { tile, misses: 0 };
     this.save();
-    return [{ type: 'hint', pair: st.hintPair, brokeChain }];
+    return [{ type: 'scope', tier, tile, remaining: pairs.length, hintsLeft: st.hintsLeft, fever: !!st.fever }];
   }
 
   giveUp() {
@@ -265,11 +348,12 @@ export class RefuteGame {
     const clearBonus = cfg.score.stageClear;
     const perfectBonus = perfect ? cfg.score.perfect : 0;
     const savedBonus = st.shufflesLeft * cfg.score.shuffleSaved;
+    const hintBonus = st.hintsLeft * cfg.score.hintSaved;
     const lifeGain = perfect && this.run.lives < cfg.lives.max ? cfg.lives.perfectRecover : 0;
     this.run.lives = Math.min(cfg.lives.max, this.run.lives + lifeGain);
-    const bonusTotal = clearBonus + perfectBonus + savedBonus;
+    const bonusTotal = clearBonus + perfectBonus + savedBonus + hintBonus;
     this.run.score += bonusTotal; st.stageScore += bonusTotal;
-    st.fever = null; st.status = 'clear';
+    st.fever = null; st.scope = null; st.flashUntil = null; st.status = 'clear';
     const rank = this.rankFor(st.stageScore);
     this.p.stars[def.stage] = Math.max(this.p.stars[def.stage] ?? 0, stars);
     const prev = this.p.ranks[def.stage];
@@ -277,9 +361,10 @@ export class RefuteGame {
     this.p.maxStage = Math.max(this.p.maxStage, this.run.stageIndex + 1);
     this.p.bestScore = Math.max(this.p.bestScore, this.run.score);
     this.save();
-    return [{ type: 'stageClear', stage: def.stage, stars, rank, perfect, clearBonus, perfectBonus, savedBonus, lifeGain,
+    return [{ type: 'stageClear', stage: def.stage, stars, rank, perfect, clearBonus, perfectBonus, savedBonus, hintBonus, lifeGain,
               stageScore: st.stageScore, playScore: st.stageScore - bonusTotal, score: this.run.score,
-              shufflesUsed: st.shufflesUsed, shufflesLeft: st.shufflesLeft, isLast: this.run.stageIndex + 1 >= this.stages.length }];
+              shufflesUsed: st.shufflesUsed, shufflesLeft: st.shufflesLeft, hintsLeft: st.hintsLeft,
+              isLast: this.run.stageIndex + 1 >= this.stages.length }];
   }
   nextStage() {
     if (!this.run || this.stage.status !== 'clear') return [];
@@ -293,7 +378,7 @@ export class RefuteGame {
     const kept = Math.floor(st.stageScore * keepRatio), lost = st.stageScore - kept;
     this.run.score -= lost;
     this.p.attempts[def.stage] = (this.p.attempts[def.stage] ?? 0) + 1;
-    st.stageScore = 0; st.fever = null;
+    st.stageScore = 0; st.fever = null; st.scope = null; st.flashUntil = null;
     if (this.run.lives <= 0) {
       st.status = 'runOver';
       this.p.bestScore = Math.max(this.p.bestScore, this.run.score);
@@ -351,7 +436,6 @@ export class DeriveGame {
     }
     if (c.selected === null) { c.selected = pos; return [{ type: 'select', pos }]; }
     if (c.selected === pos) {
-      // 同じタイルを 2 回: ∧E
       const next = andE(cells, pos);
       c.selected = null;
       if (!next) {
@@ -409,7 +493,6 @@ export class DeriveGame {
     if (!c || c.status !== 'play') return [];
     const moves = deriveMoves(c.cells, this.width, c.goal);
     if (moves.length === 0) return [{ type: 'noHint' }];
-    // Goal に近づく手を優先: 結論が Goal の部分式になる手、なければ任意
     const good = moves.filter((m) => m.result && (m.result === c.goal || c.goal.includes(m.result)));
     c.hintMove = (good.length ? good : moves)[0];
     c.hints += 1; c.selected = null;

@@ -39,7 +39,9 @@ export class Renderer {
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   }
 
-  renderBoard(cells, { selected = null, hintPair = null, hintMove = null, born = null, goalHit = null } = {}) {
+  renderBoard(cells, { selected = null, hintPair = null, hintMove = null, born = null, goalHit = null, flashPairs = null, scopeTile = null } = {}) {
+    const flashSet = new Set();
+    if (flashPairs) for (const [a, b] of flashPairs) { flashSet.add(a); flashSet.add(b); }
     const frag = document.createDocumentFragment();
     cells.forEach((c, p) => {
       const el = document.createElement('button');
@@ -52,6 +54,8 @@ export class Renderer {
       if (c === '') el.tabIndex = -1;
       if (selected === p) el.classList.add('selected');
       if (hintPair && (hintPair[0] === p || hintPair[1] === p)) el.classList.add('hint');
+      if (flashSet.has(p)) el.classList.add('flash');
+      if (scopeTile === p) el.classList.add('scope');
       if (hintMove) { if (hintMove.i === p) el.classList.add('hint-from'); if (hintMove.j === p) el.classList.add('hint-to'); }
       if (born === p) el.classList.add('born');
       if (goalHit === p) el.classList.add('goal-hit');
@@ -114,7 +118,7 @@ export class Renderer {
     // ボタン
     this.$('controls').classList.remove('four');
     this.$('btn-reset').hidden = true;
-    this.$('btn-hint-sub').textContent = 'Chain が途切れる';
+    this.renderHintButton(game);
     const btn = this.$('btn-action'), label = this.$('btn-action-label'), sub = this.$('btn-action-sub');
     if (st.shufflesLeft <= 0) {
       btn.classList.remove('ctl-primary'); btn.classList.add('ctl-danger');
@@ -126,6 +130,20 @@ export class Renderer {
       for (let k = 0; k < def.shuffles; k++) dots.push(`<span class="dot${k < st.shufflesLeft ? '' : ' off'}"></span>`);
       sub.innerHTML = `<span class="stock">${dots.join('')}</span>`;
     }
+  }
+
+  // HINT ボタン(REFUTE)。Chain 倍率で HINT / FLASH / SCOPE に変わり、残り使用回数を点で示す
+  renderHintButton(game) {
+    const st = game.stage, tier = game.hintTier;
+    const btn = this.$('btn-hint'), label = this.$('btn-hint-label'), sub = this.$('btn-hint-sub');
+    btn.classList.remove('tier-hint', 'tier-flash', 'tier-scope');
+    btn.classList.add(`tier-${tier}`);
+    label.textContent = tier.toUpperCase();
+    if (game.inFever) { sub.textContent = `FEVER 時間 −${game.cfg.fever.hintTimeCostMs / 1000} 秒`; btn.disabled = false; return; }
+    const dots = [];
+    for (let k = 0; k < game.cfg.hint.perStage; k++) dots.push(`<span class="dot${k < st.hintsLeft ? '' : ' off'}"></span>`);
+    sub.innerHTML = `<span class="stock">${dots.join('')}</span>`;
+    btn.disabled = st.hintsLeft <= 0;
   }
 
   hudDerive(game) {
@@ -147,6 +165,9 @@ export class Renderer {
     // ボタン: HINT / UNDO / RESET / MENU
     this.$('controls').classList.add('four');
     this.$('btn-reset').hidden = false;
+    const hb = this.$('btn-hint');
+    hb.classList.remove('tier-hint', 'tier-flash', 'tier-scope'); hb.disabled = false;
+    this.$('btn-hint-label').textContent = 'HINT';
     this.$('btn-hint-sub').textContent = '次の 1 手を示す';
     const btn = this.$('btn-action'), label = this.$('btn-action-label'), sub = this.$('btn-action-sub');
     btn.classList.add('ctl-primary'); btn.classList.remove('ctl-danger');
