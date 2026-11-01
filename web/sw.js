@@ -1,10 +1,10 @@
 // Service Worker: 一度開いたら電波が無くても遊べるようにファイルを手元に置く。
 // 更新のたびに VERSION を上げると古いキャッシュが捨てられる。
-const VERSION = 'logic-v3';
+const VERSION = 'logic-v4';
 const FILES = [
   './', './index.html', './manifest.json',
   './css/style.css', './css/logic.css',
-  './js/main.js', './js/game.js', './js/logic.js', './js/render.js', './js/fx.js', './js/audio.js', './js/config.js',
+  './js/main.js', './js/game.js', './js/logic.js', './js/render.js', './js/fx.js', './js/audio.js', './js/bgm.js', './js/config.js',
   './levels/refute.json', './levels/derive.json',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png',
 ];

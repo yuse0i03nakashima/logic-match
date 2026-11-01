@@ -6,6 +6,7 @@ import { Progress, RefuteGame, DeriveGame } from './game.js';
 import { Renderer } from './render.js';
 import { FX, heatColor, PALETTE } from './fx.js';
 import { Sound, vibrate } from './audio.js';
+import { Bgm } from './bgm.js';
 import { pretty, refutePairs } from './logic.js';
 
 const fmt = (n) => n.toLocaleString('en-US');
@@ -27,6 +28,11 @@ async function boot() {
   const ui = new Renderer(document);
   const fx = new FX(document.getElementById('fx'), CONFIG.fx);
   const sound = new Sound(CONFIG.audio.masterVolume);
+  const bgm = new Bgm(CONFIG.bgm);
+  // 最初のタップで AudioContext ができたら BGM をつなぐ(ensure は何度呼んでもよい)
+  const ensureAudio = () => { if (sound.ensure()) bgm.attach(sound.ctx); };
+  // 拍に合わせて背景を脈打たせる
+  (function beat() { document.documentElement.style.setProperty('--beat', bgm.level().toFixed(2)); requestAnimationFrame(beat); })();
   const app = document.getElementById('app');
   let mode = null;        // 'refute' | 'derive'
   let busy = false;
@@ -57,6 +63,11 @@ async function boot() {
 
   // ---------- 時間(REFUTE の Chain ゲージと FEVER) ----------
   setInterval(() => {
+    // BGM: REFUTE は Chain の熱と FEVER に合わせ、DERIVE は落ち着いた音にする。Title では止める
+    if (mode === 'refute' && refute.stage?.status === 'play') { bgm.setHeat(refute.heat); bgm.setFever(refute.inFever); bgm.play('normal'); }
+    else if (mode === 'derive' && derive.cur?.status === 'play') { bgm.setFever(false); bgm.setHeat(0.35); bgm.play('normal'); }
+    else if (mode === null) bgm.stop();
+    bgm.duck(overlayOpen());
     if (mode !== 'refute' || !refute.stage || refute.stage.status !== 'play' || overlayOpen()) return;
     const events = refute.tick(Date.now());
     if (events.length) handleRefute(events); else ui.hudRefute(refute, Date.now());
@@ -469,14 +480,14 @@ async function boot() {
     card.querySelector('#ov-refute').onclick = () => startRefute(0);
     card.querySelector('#ov-derive').onclick = () => startDerive(0);
     card.querySelector('#ov-resume-refute')?.addEventListener('click', () => {
-      sound.ensure(); mode = 'refute';
+      ensureAudio(); mode = 'refute';
       const st = refute.stage;
       if (st.status === 'clear') { ui.hideOverlay(); redraw(); handleRefute(refute.nextStage()); return; }
       if (st.status === 'failed') { handleRefute(refute.retryStage()); return; }
       refute.resume(Date.now()); ui.hideOverlay(); redraw();
     });
     card.querySelector('#ov-resume-derive')?.addEventListener('click', () => {
-      sound.ensure(); mode = 'derive';
+      ensureAudio(); mode = 'derive';
       if (derive.cur.status === 'clear') { ui.hideOverlay(); redraw(); handleDerive(derive.nextStage()); return; }
       ui.hideOverlay(); redraw();
     });
@@ -486,8 +497,8 @@ async function boot() {
     }));
     card.querySelector('#ov-rules').onclick = showRules;
   }
-  function startRefute(stageIndex) { sound.ensure(); mode = 'refute'; handleRefute(refute.newRun(stageIndex)); }
-  function startDerive(stageIndex) { sound.ensure(); mode = 'derive'; handleDerive(derive.start(stageIndex)); }
+  function startRefute(stageIndex) { ensureAudio(); mode = 'refute'; handleRefute(refute.newRun(stageIndex)); }
+  function startDerive(stageIndex) { ensureAudio(); mode = 'derive'; handleDerive(derive.start(stageIndex)); }
 
   function showRules() {
     const c = CONFIG.refute;
@@ -526,12 +537,14 @@ async function boot() {
       <div class="actions">
         <button class="btn btn-primary" id="ov-back">Resume</button>
         <button class="btn btn-ghost" id="ov-sound">Sound: ${sound.enabled ? 'ON' : 'OFF'}</button>
+        <button class="btn btn-ghost" id="ov-bgm">BGM: ${bgm.enabled ? 'ON' : 'OFF'}</button>
         <button class="btn btn-ghost" id="ov-rules">How to Play</button>
         <button class="btn btn-ghost" id="ov-title">Title へ</button>
         ${inRefute ? '<button class="btn btn-danger" id="ov-giveup">GIVE UP(Heart −1 · 得点は半分残る)</button>' : ''}
       </div>`);
     card.querySelector('#ov-back').onclick = () => { if (mode === 'refute') refute.resume(Date.now()); ui.hideOverlay(); };
     card.querySelector('#ov-sound').onclick = () => { sound.setEnabled(!sound.enabled); soundLabel(); showMenu(); };
+    card.querySelector('#ov-bgm').onclick = () => { bgm.setEnabled(!bgm.enabled); showMenu(); };
     card.querySelector('#ov-rules').onclick = () => { showRules(); document.getElementById('ov-back').onclick = showMenu; };
     card.querySelector('#ov-title').onclick = showTitle;
     card.querySelector('#ov-giveup')?.addEventListener('click', () => { ui.hideOverlay(); handleRefute(refute.giveUp()); });
@@ -541,24 +554,24 @@ async function boot() {
   ui.board.addEventListener('pointerdown', (e) => {
     const el = e.target.closest('.cell');
     if (!el || busy || overlayOpen()) return;
-    sound.ensure();
+    ensureAudio();
     const pos = Number(el.dataset.pos);
     if (mode === 'refute') handleRefute(refute.tap(pos, Date.now()));
     else if (mode === 'derive') handleDerive(derive.tap(pos));
   });
   document.getElementById('btn-action').onclick = () => {
     if (busy || overlayOpen()) return;
-    sound.ensure();
+    ensureAudio();
     if (mode === 'refute') handleRefute(refute.shuffle(Date.now()));
     else if (mode === 'derive') handleDerive(derive.undo());
   };
   document.getElementById('btn-hint').onclick = () => {
     if (busy || overlayOpen()) return;
-    sound.ensure();
+    ensureAudio();
     if (mode === 'refute') handleRefute(refute.useHint());
     else if (mode === 'derive') handleDerive(derive.useHint());
   };
-  document.getElementById('btn-reset').onclick = () => { if (!busy && !overlayOpen() && mode === 'derive') { sound.ensure(); handleDerive(derive.reset()); } };
+  document.getElementById('btn-reset').onclick = () => { if (!busy && !overlayOpen() && mode === 'derive') { ensureAudio(); handleDerive(derive.reset()); } };
   document.getElementById('btn-menu').onclick = showMenu;
   soundLabel();
 
