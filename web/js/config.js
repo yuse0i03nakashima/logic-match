@@ -5,6 +5,7 @@ export const CONFIG = {
     score: {
       pairBase: 10,          // 1 Pair の基礎点。得点 = 基礎点 × 難しさ倍率 × Chain 倍率 × Speed 倍率(× FEVER)
       rowClear: 100,         // 行が消えたとき: rowClear × 行数^2 × Chain 倍率
+      varClear: 150,         // ある変数(p など)を含む式を Board から全部消し切ったとき(1 つの変数ごと)× Chain 倍率
       stageClear: 200,
       perfect: 500,          // SHUFFLE なしで Clear
       shuffleSaved: 150,     // 残した SHUFFLE 1 回ごと

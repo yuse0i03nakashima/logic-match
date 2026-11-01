@@ -7,7 +7,7 @@
 // RefuteGame は THE TEN(NumberMatch)の Game と同じ骨格。Add が SHUFFLE に、matches が unsat2 に、
 // 位置の条件が 8 方向の見通し線になっている。Chain・FEVER・3 段階の Hint・Heart・GIVE UP は同じ。
 
-import { refutePairs, unsat2, connected, collapseRows, applyRule, andE, deriveMoves, goalReachable, parse } from './logic.js';
+import { refutePairs, unsat2, connected, collapseRows, applyRule, andE, deriveMoves, goalReachable, parse, vars } from './logic.js';
 
 // ---------- 保存 ----------
 export class Progress {
@@ -233,7 +233,11 @@ export class RefuteGame {
     const hintedRatio = hinted ? cfg.score.hintedPairRatio : 1;
     const pairPoints = Math.round(cfg.score.pairBase * diff.mult * mult * speed.mult * feverMult * hintedRatio);
     const rowPoints = Math.round(cfg.score.rowClear * clearedRows.length ** 2 * mult * feverMult);
-    const points = pairPoints + rowPoints;
+    // VAR CLEAR: この 1 手で、ある変数を含む式が Board から消え切った
+    const leftVars = new Set(vars(after.join('')));
+    const varsCleared = vars(b[i] + b[j]).filter((v) => !leftVars.has(v));
+    const varPoints = Math.round(cfg.score.varClear * varsCleared.length * mult * feverMult);
+    const points = pairPoints + rowPoints + varPoints;
     st.stageScore += points; this.run.score += points;
     st.selected = null; st.board = after;
 
@@ -241,7 +245,7 @@ export class RefuteGame {
     if (scoped) labels.push('SCOPE');
     if (hinted) labels.push('HINTED');
     events.push({
-      type: 'remove', i, j, a: b[i], b: b[j], points, pairPoints, rowPoints, chain: st.chain, mult, heat: this.heat,
+      type: 'remove', i, j, a: b[i], b: b[j], points, pairPoints, rowPoints, varPoints, varsCleared, chain: st.chain, mult, heat: this.heat,
       clearedRows, board: after, labels, diffMult: diff.mult, speed: speed.tier, speedMult: speed.mult, fever: !!st.fever,
       hinted, scoped, scopeBroken,
     });

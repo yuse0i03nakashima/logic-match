@@ -238,3 +238,17 @@ test('保存と復元: 同じストレージから作り直すと両モードの
   assert.deepEqual(d2.cur.cells, d1.cur.cells);
   assert.equal(d2.cur.moves, 1);
 });
+
+test('REFUTE: VAR CLEAR は、ある変数を含む式が全部消えたとき 1 つごとに Bonus', () => {
+  const { refute: g } = fresh();
+  g.newRun(0);
+  g.stage.board = ['p', '!p', 'q', '!q', 'r', '!r'];
+  let ev = g.tap(0, 1000).concat(g.tap(1, 1000)).find((e) => e.type === 'remove');
+  assert.deepEqual(ev.varsCleared, ['p']);
+  assert.equal(ev.varPoints, Math.round(R.score.varClear * 1 * ev.mult));
+  const { refute: g2 } = fresh();
+  g2.newRun(0);
+  g2.stage.board = ['p', '!p', '&pq', '!q', '', ''];
+  ev = g2.tap(0).concat(g2.tap(1)).find((e) => e.type === 'remove');
+  assert.deepEqual(ev.varsCleared, []);                 // p は &pq に残っている
+});
