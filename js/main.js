@@ -64,8 +64,8 @@ async function boot() {
   // ---------- 時間(REFUTE の Chain ゲージと FEVER) ----------
   setInterval(() => {
     // BGM: REFUTE は Chain の熱と FEVER に合わせ、DERIVE は落ち着いた音にする。Title では止める
-    if (mode === 'refute' && refute.stage?.status === 'play') { bgm.setHeat(refute.heat); bgm.setFever(refute.inFever); bgm.play('normal'); }
-    else if (mode === 'derive' && derive.cur?.status === 'play') { bgm.setFever(false); bgm.setHeat(0.35); bgm.play('normal'); }
+    if (mode === 'refute' && refute.stage?.status === 'play') { bgm.setHeat(refute.heat); bgm.setFever(refute.inFever); bgm.play(); }
+    else if (mode === 'derive' && derive.cur?.status === 'play') { bgm.setFever(false); bgm.setHeat(0.35); bgm.play(); }
     else if (mode === null) bgm.stop();
     bgm.duck(overlayOpen());
     if (mode !== 'refute' || !refute.stage || refute.stage.status !== 'play' || overlayOpen()) return;
@@ -575,6 +575,7 @@ async function boot() {
   document.getElementById('btn-menu').onclick = showMenu;
   soundLabel();
 
+  if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') globalThis.__logic = { refute, derive, bgm, sound };
   showTitle();
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 }
