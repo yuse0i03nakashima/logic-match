@@ -7,7 +7,7 @@
 // RefuteGame は THE TEN(NumberMatch)の Game と同じ骨格。Add が SHUFFLE に、matches が unsat2 に、
 // 位置の条件が 8 方向の見通し線になっている。Chain・FEVER・3 段階の Hint・Heart・GIVE UP は同じ。
 
-import { refutePairs, unsat2, connected, collapseRows, applyRule, andE, deriveMoves, parse } from './logic.js';
+import { refutePairs, unsat2, connected, collapseRows, applyRule, andE, deriveMoves, goalReachable, parse } from './logic.js';
 
 // ---------- 保存 ----------
 export class Progress {
@@ -468,7 +468,8 @@ export class DeriveGame {
     c.selected = null; c.hintMove = null;
     const events = [{ type: 'move', ...move, moves: c.moves, par: c.par, goal: c.goal }];
     if (c.cells.includes(c.goal)) events.push(...this.clear());
-    else if (deriveMoves(c.cells, this.width, c.goal).length === 0) events.push({ type: 'deadEnd' });
+    else if (deriveMoves(c.cells, this.width, c.goal).length === 0) events.push({ type: 'deadEnd', reason: 'noMoves' });
+    else if (!goalReachable(c.cells, this.width, c.goal)) events.push({ type: 'deadEnd', reason: 'unreachable' });
     this.save();
     return events;
   }

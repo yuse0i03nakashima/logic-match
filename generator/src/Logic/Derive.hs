@@ -13,6 +13,9 @@ module Logic.Derive
   , reaches
   , replay
   , bfs
+  , reachableStates
+  , deadEndFree
+  , trapCount
   , DStage(..)
   , dstageSpec
   , Derivation(..)
@@ -157,6 +160,36 @@ bfs maxDepth goal b0
           | otherwise          = children (Set.insert b' s) ((b', m : path) : a) ms
 
     nodeCap = 60000 :: Int
+
+-- | 初期ボードから到達できる状態をすべて集める(Goal に届いた状態からは先へ進まない)。
+--   ボードは 16 マス・タイル 9 枚以下なので、状態は多くても数百。上限を超えたら Nothing。
+reachableStates :: Int -> Prop -> Board -> Maybe (Set.Set Board)
+reachableStates cap goal b0 = go (Set.singleton b0) [b0]
+  where
+    go seen [] = Just seen
+    go seen (b : rest)
+      | Set.size seen > cap = Nothing
+      | reaches goal b      = go seen rest
+      | otherwise =
+          let kids = [b' | (_, b') <- legalMoves goal b, not (Set.member b' seen)]
+          in go (foldr Set.insert seen kids) (rest ++ kids)
+
+-- | 行き止まりが無いか: 到達できるどの状態からも Goal に届く。
+--   「生きている状態」を Goal の状態から逆向きに広げ、全状態が生きていれば True。
+--   (不動点の計算。生きている集合が増えなくなるまで繰り返す)
+deadEndFree :: Prop -> Board -> Bool
+deadEndFree goal b0 = case reachableStates 3000 goal b0 of
+  Nothing  -> False
+  Just all' ->
+    let states = Set.toList all'
+        live0  = Set.fromList [b | b <- states, reaches goal b]
+        step live = Set.fromList [b | b <- states, reaches goal b || any (`Set.member` live) (map snd (legalMoves goal b))]
+        fix live = let live' = step live in if live' == live then live else fix live'
+    in Set.size (fix live0) == length states
+
+-- | 初手のうち、Goal に届かなくなる手の数(後半ステージの難しさの目安)。
+trapCount :: Prop -> Board -> Int
+trapCount goal b0 = length [() | (_, b') <- legalMoves goal b0, bfs 8 goal b' == Nothing]
 
 -- | DERIVE のステージ設定。
 data DStage = DStage
@@ -305,12 +338,17 @@ placeBoard spec d seed
   | nLeaves > 9 || dMin > dMax = Nothing
   | otherwise = case bfs 8 goal board of
       Just sol
-        | length sol >= dParLo spec && length sol <= dParHi spec ->
+        | length sol >= dParLo spec && length sol <= dParHi spec && safeEnough ->
             Just (DBoard seed board (length sol) sol)
       _ -> Nothing
   where
     goal     = dGoal d
     leaves   = dLeaves d
+    -- Stage 1〜10 は行き止まりの無い面だけ(どの順で進めても Goal に届く)。
+    -- Stage 11 以降は行き止まりを許すが、初手の半分以上が罠になる面は採らない。
+    safeEnough
+      | dStage spec <= 10 = deadEndFree goal board
+      | otherwise         = 2 * trapCount goal board < length (legalMoves goal board)
     nLeaves  = length leaves
     dMin     = max 0 (5 - nLeaves)
     dMax     = min 3 (9 - nLeaves)
