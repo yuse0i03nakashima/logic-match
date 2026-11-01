@@ -31,7 +31,7 @@ async function boot() {
   const sound = new Sound(CONFIG.audio.masterVolume);
   // BGM は 2 系統: 生成(music.js)と mp3(bgm.js)。メニューで SYNTH / TRACK / OFF を切り替える
   const track = new Bgm(CONFIG.bgm);
-  const synth = new Music({ volume: CONFIG.bgm.synthVolume });
+  const synth = new Music({ volume: CONFIG.bgm.synthVolume, tonic: CONFIG.bgm.tonic, bpm: CONFIG.bgm.bpm });
   const loadBgmMode = () => { try { return localStorage.getItem('logicmatch.bgmMode') ?? CONFIG.bgm.mode; } catch { return CONFIG.bgm.mode; } };
   const bgm = {
     mode: loadBgmMode(),
