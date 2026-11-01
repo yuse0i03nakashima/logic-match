@@ -63,3 +63,6 @@
 .card .rules td { padding:4px 6px; border-bottom:1px solid var(--border); }
 .card .rules td:first-child { font-family:var(--font-mono); color:var(--text); white-space:nowrap; }
 .card .rules .f { font-family:var(--font-mono); color:var(--amber); }
+
+/* hidden 属性が display:flex に負けないように */
+.chain[hidden], .lives[hidden] { display:none; }
