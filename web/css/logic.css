@@ -1,0 +1,65 @@
+/* THE LOGIC 固有の見た目。style.css(THE TEN と共通)の上に重ねる。 */
+
+:root {
+  --cell-w:56px;     /* JS が幅と列数から再計算 */
+  --cell-h:46px;
+}
+
+/* タイルは横長。式の長さで文字の大きさを変える */
+.board {
+  grid-template-columns:repeat(var(--cols, 6), var(--cell-w));
+  grid-auto-rows:var(--cell-h);
+}
+.cell {
+  font-size:calc(var(--cell-h) * 0.48);
+  letter-spacing:0;
+  padding:0 2px;
+  font-family:var(--font-mono);
+  white-space:nowrap;
+}
+.cell.len-3 { font-size:calc(var(--cell-h) * 0.40); }
+.cell.len-4 { font-size:calc(var(--cell-h) * 0.34); }
+.cell.len-5 { font-size:calc(var(--cell-h) * 0.29); letter-spacing:-0.5px; }
+.cell.len-6 { font-size:calc(var(--cell-h) * 0.25); letter-spacing:-0.5px; }
+
+/* 合体の結果が現れる */
+.cell.born { animation:born 0.45s cubic-bezier(.2,1.5,.4,1); border-color:var(--green); color:var(--green); }
+@keyframes born { 0%{transform:scale(0.3); opacity:0} 60%{transform:scale(1.15)} 100%{transform:scale(1); opacity:1} }
+.cell.goal-hit { animation:goal-hit 0.8s ease-out; border-color:var(--amber); color:var(--amber); box-shadow:0 0 24px rgba(245,166,35,0.6); }
+@keyframes goal-hit { 0%{transform:scale(1)} 30%{transform:scale(1.25)} 100%{transform:scale(1.1)} }
+.cell.hint-from { animation:hint-pulse 0.9s ease-in-out infinite; border-color:var(--amber); color:var(--amber); }
+.cell.hint-to { animation:hint-pulse 0.9s ease-in-out infinite 0.45s; border-color:var(--amber); color:var(--amber); }
+
+/* Goal の帯(DERIVE) */
+.goal {
+  display:flex; align-items:center; gap:12px; margin-top:8px; padding:8px 12px;
+  border:1px solid var(--border-light); background:var(--surface);
+}
+.goal[hidden] { display:none; }
+.goal-label { font-family:var(--font-mono); font-size:10px; letter-spacing:3px; color:var(--text-dim); }
+.goal-formula { font-family:var(--font-mono); font-size:22px; font-weight:500; color:var(--amber); flex:1; text-align:center; letter-spacing:1px; }
+.goal-moves { font-family:var(--font-mono); font-size:11px; letter-spacing:1px; color:var(--text-muted); white-space:nowrap; }
+
+/* 操作ボタンは 3 つか 4 つ */
+.controls { grid-template-columns:1fr 1.3fr 1fr; }
+.controls.four { grid-template-columns:1fr 1fr 1fr 1fr; }
+.ctl[hidden] { display:none; }
+
+/* 規則名の表示(合体時に浮かぶ)は Canvas 側。ここではモード選択の見た目 */
+.modes { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:8px; }
+.mode-btn {
+  appearance:none; background:var(--surface2); border:1px solid var(--border-light); color:var(--text);
+  padding:14px 12px; cursor:pointer; text-align:left; transition:all 0.15s;
+}
+.mode-btn:active { transform:translateY(1px); }
+.mode-btn .mode-name { font-family:var(--font-mono); font-size:14px; letter-spacing:3px; font-weight:500; }
+.mode-btn .mode-ja { font-family:var(--font-ja); font-size:12px; color:var(--text-muted); margin-top:6px; line-height:1.6; font-weight:300; }
+.mode-btn .mode-stat { font-family:var(--font-mono); font-size:10px; color:var(--text-dim); margin-top:8px; letter-spacing:1px; }
+.mode-btn.refute { border-left:3px solid var(--rose); }
+.mode-btn.derive { border-left:3px solid var(--green); }
+
+/* 式の表(How to Play) */
+.card .rules table { width:100%; border-collapse:collapse; margin:8px 0; font-size:12px; }
+.card .rules td { padding:4px 6px; border-bottom:1px solid var(--border); }
+.card .rules td:first-child { font-family:var(--font-mono); color:var(--text); white-space:nowrap; }
+.card .rules .f { font-family:var(--font-mono); color:var(--amber); }

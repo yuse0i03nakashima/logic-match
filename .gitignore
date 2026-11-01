@@ -1,0 +1,14 @@
+# Haskell
+generator/dist-newstyle/
+*.hi
+*.o
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+# scratch
+_work/
+# yomiyasu の検査記録
+.yomiyasu/
+# yomiyasu の検査記録
+.yomiyasu/
