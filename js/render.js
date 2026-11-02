@@ -98,7 +98,7 @@ export class Renderer {
     const run = game.run, st = game.stage, def = game.stageDef;
     if (!run || !st || !def) return;
     this.$('hud-stage-label').textContent = `STAGE ${String(def.stage).padStart(2, '0')}`;
-    this.$('hud-world-label').textContent = `refute · world ${game.worldOf(run.stageIndex) + 1}`;
+    this.$('hud-world-label').textContent = `refute · world ${game.worldOf(run.stageIndex) + 1}${game.relax ? ' · relax' : ''}`;
     this.$('hud-center-label').textContent = 'SCORE';
     this.$('hud-score').textContent = run.score.toLocaleString('en-US');
     this.$('hud-chain').hidden = false;

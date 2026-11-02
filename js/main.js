@@ -49,6 +49,14 @@ async function boot() {
     },
     get label() { return this.mode === 'synth' ? 'ON' : 'OFF'; },
   };
+  // Relax モード: 時間の要素をなくし、BGM と演出を控えめに
+  let fxScale = 1;
+  function applyRelax() {
+    const on = refute.relax;
+    synth.setCalm(on ? { bpm: CONFIG.relax.bpm, maxLayers: CONFIG.relax.maxLayers, volume: CONFIG.relax.synthVolume, feverCalm: CONFIG.relax.feverCalm } : null);
+    fxScale = on ? CONFIG.relax.fxScale : 1;
+    document.body.classList.toggle('relax', on);
+  }
   // 最初のタップで AudioContext ができたら BGM をつなぐ(ensure は何度呼んでもよい)
   const ensureAudio = () => { if (sound.ensure()) bgm.attach(sound.ctx); };
   // 拍に合わせて背景を脈打たせる
@@ -84,7 +92,7 @@ async function boot() {
   // ---------- 時間(REFUTE の Chain ゲージと FEVER) ----------
   setInterval(() => {
     // BGM: REFUTE は Chain の熱と FEVER に合わせ、DERIVE は落ち着いた音にする。Title では止める
-    if (mode === 'refute' && refute.stage?.status === 'play') { bgm.setHeat(refute.heat); bgm.setFever(refute.inFever); bgm.play(); }
+    if (mode === 'refute' && refute.stage?.status === 'play') { bgm.setHeat(refute.relax ? Math.min(0.5, refute.heat) : refute.heat); bgm.setFever(refute.inFever); bgm.play(); }
     else if (mode === 'derive' && derive.cur?.status === 'play') { bgm.setFever(false); bgm.setHeat(0.35); bgm.play(); }
     else if (mode === null) bgm.stop();
     bgm.duck(overlayOpen());
@@ -188,7 +196,7 @@ async function boot() {
       fx.flashLine(ci.x, ci.y, cj.x, cj.y, color, 3 + ev.heat * 3 + speedBoost * 2);
       fx.trail(ci.x, ci.y, cj.x, cj.y, color, 10 + Math.round(ev.heat * 10 + feverBoost * 12));
       const count = CONFIG.fx.particlesPerRemove + Math.round(ev.heat * 24 + speedBoost * 12 + feverBoost * 24);
-      for (const c of [ci, cj]) fx.burst(c.x, c.y, { color, count, power, size: 3 + speedBoost + feverBoost });
+      for (const c of [ci, cj]) fx.burst(c.x, c.y, { color, count: Math.round(count * fxScale), power: power * (0.6 + 0.4 * fxScale), size: 3 + speedBoost + feverBoost });
       if (ev.heat > 0.5 || speedBoost > 0 || feverBoost) fx.ring(mx, my, color, 40 + ev.heat * 60 + speedBoost * 30);
       const t = ui.scoreCenter();
       fx.flyText(mx, my, t.x, t.y, `+${ev.pairPoints}`, { color, size: 18 + ev.heat * 10 + speedBoost * 4, dur: 0.5 });
@@ -503,9 +511,11 @@ async function boot() {
         <div class="worlds">${worldButtons(refute, refuteStages, 'refute')}</div>
         <div class="label" style="margin-top:6px">derive worlds</div>
         <div class="worlds">${worldButtons(derive, deriveStages, 'derive')}</div>
+        <button class="btn btn-ghost" id="ov-relax">Relax モード: ${refute.relax ? 'ON' : 'OFF'}<small>　時間の要素なし・静かな BGM</small></button>
         <button class="btn btn-ghost" id="ov-rules">How to Play</button>
       </div>
       <div class="meta">semantics verified against haskell vectors</div>`);
+    card.querySelector('#ov-relax').onclick = () => { refute.setRelax(!refute.relax); applyRelax(); showTitle(); };
     card.querySelector('#ov-refute').onclick = () => startRefute(0);
     card.querySelector('#ov-derive').onclick = () => startDerive(0);
     card.querySelector('#ov-resume-refute')?.addEventListener('click', () => {
@@ -568,6 +578,7 @@ async function boot() {
         <button class="btn btn-primary" id="ov-back">Resume</button>
         <button class="btn btn-ghost" id="ov-sound">Sound: ${sound.enabled ? 'ON' : 'OFF'}</button>
         <button class="btn btn-ghost" id="ov-bgm">BGM: ${bgm.label}</button>
+        <button class="btn btn-ghost" id="ov-relax">Relax: ${refute.relax ? 'ON' : 'OFF'}</button>
         <button class="btn btn-ghost" id="ov-rules">How to Play</button>
         <button class="btn btn-ghost" id="ov-title">Title へ</button>
         ${inRefute ? '<button class="btn btn-danger" id="ov-giveup">GIVE UP(Heart −1 · 得点は半分残る)</button>' : ''}
@@ -575,6 +586,7 @@ async function boot() {
     card.querySelector('#ov-back').onclick = () => { if (mode === 'refute') refute.resume(Date.now()); ui.hideOverlay(); };
     card.querySelector('#ov-sound').onclick = () => { sound.setEnabled(!sound.enabled); soundLabel(); showMenu(); };
     card.querySelector('#ov-bgm').onclick = () => { bgm.cycle(); showMenu(); };
+    card.querySelector('#ov-relax').onclick = () => { refute.setRelax(!refute.relax); applyRelax(); showMenu(); };
     card.querySelector('#ov-rules').onclick = () => { showRules(); document.getElementById('ov-back').onclick = showMenu; };
     card.querySelector('#ov-title').onclick = showTitle;
     card.querySelector('#ov-giveup')?.addEventListener('click', () => { ui.hideOverlay(); handleRefute(refute.giveUp()); });
@@ -606,6 +618,7 @@ async function boot() {
   soundLabel();
 
   if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') globalThis.__logic = { refute, derive, bgm, sound };
+  applyRelax();
   showTitle();
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 }

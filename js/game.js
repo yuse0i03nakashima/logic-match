@@ -69,6 +69,8 @@ export class RefuteGame {
     this.p = progress.data.refute;      // このモードの保存領域
   }
   get run() { return this.p.run; }
+  get relax() { return !!this.progress.data.relax; }
+  setRelax(on) { this.progress.data.relax = !!on; this.save(); }
   get stage() { return this.run?.stage ?? null; }
   get stageDef() { return this.run ? this.stages[this.run.stageIndex] : null; }
   get width() { return this.stageDef?.width ?? 6; }
@@ -92,7 +94,7 @@ export class RefuteGame {
   gaugeRatio(now) {
     const st = this.stage, c = this.cfg.chain;
     if (!st || st.chain <= 0 || st.lastRemoveAt === null) return 0;
-    if (st.fever) return 1;
+    if (st.fever || this.relax) return 1;
     const t = now - st.lastRemoveAt;
     if (t < c.decayGraceMs) return 1 - t / c.decayGraceMs;
     return 1 - ((t - c.decayGraceMs) % c.decayStepMs) / c.decayStepMs;
@@ -147,7 +149,7 @@ export class RefuteGame {
       st.decayed = 0;
       events.push({ type: 'feverEnd', chain: st.chain, mult: this.multiplier });
     }
-    if (!st.fever && st.chain > 0 && st.lastRemoveAt !== null) {
+    if (!st.fever && !this.relax && st.chain > 0 && st.lastRemoveAt !== null) {
       const t = now - st.lastRemoveAt - cfg.chain.decayGraceMs;
       if (t > 0) {
         const steps = Math.floor(t / cfg.chain.decayStepMs) + 1 - st.decayed;
@@ -222,7 +224,7 @@ export class RefuteGame {
 
     const diff = refuteDifficulty(cfg.difficulty, w, i, j, b[i], b[j]);
     const elapsed = st.lastRemoveAt === null ? Infinity : now - st.lastRemoveAt;
-    const speed = scoped ? { tier: null, mult: 1 }
+    const speed = scoped || this.relax ? { tier: null, mult: 1 }
       : elapsed < cfg.speed.fastMs ? { tier: 'fast', mult: cfg.speed.fastMult }
         : elapsed < cfg.speed.quickMs ? { tier: 'quick', mult: cfg.speed.quickMult } : { tier: null, mult: 1 };
     st.lastRemoveAt = now; st.decayed = 0;
