@@ -108,7 +108,7 @@ export class RefuteGame {
   }
 
   newRun(stageIndex = 0) {
-    this.p.run = { stageIndex, score: 0, lives: this.cfg.lives.start, stage: null };
+    this.p.run = { stageIndex, score: 0, lives: this.cfg.lives.start, stage: null, maxChain: 0 };
     return this.startStage();
   }
   startStage() {
@@ -121,7 +121,7 @@ export class RefuteGame {
       hintsLeft: this.cfg.hint.perStage, hintsUsed: 0,
       chain: 0, stageScore: 0, selected: null,
       hintPair: null, flashUntil: null, scope: null,
-      lastRemoveAt: null, decayed: 0, fever: null, status: 'play',
+      lastRemoveAt: null, decayed: 0, fever: null, status: 'play', maxChain: 0,
     };
     this.save();
     return [{ type: 'stageStart', stage: def.stage, stageIndex: this.run.stageIndex }];
@@ -228,6 +228,8 @@ export class RefuteGame {
     st.lastRemoveAt = now; st.decayed = 0;
     const assisted = hinted || scoped;
     if (!assisted) st.chain += 1;
+    st.maxChain = Math.max(st.maxChain ?? 0, st.chain);
+    this.run.maxChain = Math.max(this.run.maxChain ?? 0, st.chain);
     const mult = this.multiplier;
     const feverMult = st.fever ? cfg.fever.pointMult : 1;
     const hintedRatio = hinted ? cfg.score.hintedPairRatio : 1;
@@ -368,6 +370,7 @@ export class RefuteGame {
     return [{ type: 'stageClear', stage: def.stage, stars, rank, perfect, clearBonus, perfectBonus, savedBonus, hintBonus, lifeGain,
               stageScore: st.stageScore, playScore: st.stageScore - bonusTotal, score: this.run.score,
               shufflesUsed: st.shufflesUsed, shufflesLeft: st.shufflesLeft, hintsLeft: st.hintsLeft,
+              maxMult: this.multiplierFor(st.maxChain ?? 0), runMaxMult: this.multiplierFor(this.run.maxChain ?? 0),
               isLast: this.run.stageIndex + 1 >= this.stages.length }];
   }
   nextStage() {

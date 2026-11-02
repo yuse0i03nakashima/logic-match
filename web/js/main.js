@@ -6,7 +6,6 @@ import { Progress, RefuteGame, DeriveGame } from './game.js';
 import { Renderer } from './render.js';
 import { FX, heatColor, PALETTE } from './fx.js';
 import { Sound, vibrate } from './audio.js';
-import { Bgm } from './bgm.js';
 import { Music } from './music.js';
 import { pretty, refutePairs } from './logic.js';
 
@@ -29,27 +28,26 @@ async function boot() {
   const ui = new Renderer(document);
   const fx = new FX(document.getElementById('fx'), CONFIG.fx);
   const sound = new Sound(CONFIG.audio.masterVolume);
-  // BGM は 2 系統: 生成(music.js)と mp3(bgm.js)。メニューで SYNTH / TRACK / OFF を切り替える
-  const track = new Bgm(CONFIG.bgm);
+  // BGM は生成(music.js)。メニューで ON / OFF
   const synth = new Music({ volume: CONFIG.bgm.synthVolume, tonic: CONFIG.bgm.tonic, bpm: CONFIG.bgm.bpm });
   const loadBgmMode = () => { try { return localStorage.getItem('logicmatch.bgmMode') ?? CONFIG.bgm.mode; } catch { return CONFIG.bgm.mode; } };
   const bgm = {
     mode: loadBgmMode(),
-    get active() { return this.mode === 'synth' ? synth : this.mode === 'track' ? track : null; },
-    attach(ctx) { track.attach(ctx); synth.attach(ctx); },
+    get active() { return this.mode === 'synth' ? synth : null; },
+    attach(ctx) { synth.attach(ctx); },
     play() { this.active?.play(); },
-    stop() { synth.stop(); track.stop(); },
-    setHeat(h) { synth.setHeat(h); track.setHeat(h); },
-    setFever(on) { synth.setFever(on); track.setFever(on); },
-    duck(on) { synth.duck(on); track.duck(on); },
+    stop() { synth.stop(); },
+    setHeat(h) { synth.setHeat(h); },
+    setFever(on) { synth.setFever(on); },
+    duck(on) { synth.duck(on); },
     level() { return this.active ? this.active.level() : 0; },
     cycle() {
-      const order = ['synth', 'track', 'off'];
+      const order = ['synth', 'off'];
       this.mode = order[(order.indexOf(this.mode) + 1) % order.length];
       try { localStorage.setItem('logicmatch.bgmMode', this.mode); } catch { /* 無視 */ }
       this.stop();
     },
-    get label() { return this.mode === 'synth' ? 'SYNTH' : this.mode === 'track' ? 'TRACK' : 'OFF'; },
+    get label() { return this.mode === 'synth' ? 'ON' : 'OFF'; },
   };
   // 最初のタップで AudioContext ができたら BGM をつなぐ(ensure は何度呼んでもよい)
   const ensureAudio = () => { if (sound.ensure()) bgm.attach(sound.ctx); };
@@ -269,6 +267,7 @@ async function boot() {
         ${ev.savedBonus ? `<div class="row"><span class="k">SHUFFLE 温存 Bonus(${ev.shufflesLeft} 回)</span><span class="v plus">+${fmt(ev.savedBonus)}</span></div>` : ''}
         ${ev.hintBonus ? `<div class="row"><span class="k">Hint 温存 Bonus(${ev.hintsLeft} 回)</span><span class="v plus">+${fmt(ev.hintBonus)}</span></div>` : ''}
         ${ev.lifeGain ? `<div class="row"><span class="k">Heart 回復</span><span class="v plus">+${ev.lifeGain} ♥</span></div>` : ''}
+        <div class="row"><span class="k">最高倍率(この Stage / Run)</span><span class="v">×${ev.maxMult.toFixed(1)} / ×${ev.runMaxMult.toFixed(1)}</span></div>
         <div class="row total"><span class="k">Total Score</span><span class="v">${fmt(ev.score)}</span></div>
       </div>
       <div class="actions">
